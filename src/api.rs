@@ -9,7 +9,6 @@
 
 use crate::client::json;
 use crate::post::parse_comments;
-use crate::search::search_subreddits;
 use crate::subreddit::{can_access_quarantine, subreddit};
 use crate::user::user;
 use crate::utils::{param, parse_post, Post};
@@ -142,8 +141,7 @@ pub async fn user_profile(req: Request<Body>) -> Result<Response<Body>, String> 
 	}
 }
 
-/// `GET /api/v1/search` (and `/api/v1/r/:sub/search`) — search posts, and
-/// (unless `restrict_sr` is set) matching subreddits. Requires `q`.
+/// `GET /api/v1/search` (and `/api/v1/r/:sub/search`) — search posts. Requires `q`.
 pub async fn search_endpoint(req: Request<Body>) -> Result<Response<Body>, String> {
 	let sub = req.param("sub").unwrap_or_default();
 	let quarantined = can_access_quarantine(&req, &sub);
@@ -161,18 +159,10 @@ pub async fn search_endpoint(req: Request<Body>) -> Result<Response<Body>, Strin
 		format!("/r/{sub}/search.json?{query}&raw_json=1")
 	};
 
-	let typed = param(&query_str, "type").unwrap_or_default();
-	let subreddits = if param(&query_str, "restrict_sr").is_none() {
-		search_subreddits(&q, &typed).await
-	} else {
-		Vec::new()
-	};
-
 	match Post::fetch(&path, quarantined).await {
 		Ok((posts, after)) => ok_json(&serde_json::json!({
 			"query": q,
 			"posts": posts,
-			"subreddits": subreddits,
 			"after": after,
 		})),
 		Err(msg) => api_error(&msg),
