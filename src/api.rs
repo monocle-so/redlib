@@ -57,6 +57,7 @@ pub async fn index(_req: Request<Body>) -> Result<Response<Body>, String> {
 		"version": env!("CARGO_PKG_VERSION"),
 		"endpoints": {
 			"subreddit": "/api/v1/r/{subreddit}[/{sort}]?after=&t=",
+			"subreddit_about": "/api/v1/r/{subreddit}/about",
 			"post":      "/api/v1/r/{subreddit}/comments/{id}  (also /api/v1/comments/{id})",
 			"user":      "/api/v1/user/{name}[/{listing}]?sort=&after=&t=",
 			"search":    "/api/v1/search?q=  (also /api/v1/r/{subreddit}/search?q=)",
@@ -90,6 +91,26 @@ pub async fn subreddit_listing(req: Request<Body>) -> Result<Response<Body>, Str
 			"posts": posts,
 			"after": after,
 		})),
+		Err(msg) => api_error(&msg),
+	}
+}
+
+/// `GET /api/v1/r/:sub/about` — a subreddit's metadata on its own.
+///
+/// [`subreddit_listing`] also returns this, but only alongside a post listing
+/// it has to fetch first. Callers that want the description or member count
+/// shouldn't pay for a listing they discard.
+pub async fn subreddit_meta(req: Request<Body>) -> Result<Response<Body>, String> {
+	let sub_name = req.param("sub").unwrap_or_default();
+	let quarantined = can_access_quarantine(&req, &sub_name);
+
+	// Metadata only exists for a single, real subreddit.
+	if sub_name.is_empty() || sub_name.contains('+') || sub_name == "popular" || sub_name == "all" {
+		return bad_request("Subreddit metadata is only available for a single subreddit");
+	}
+
+	match subreddit(&sub_name, quarantined).await {
+		Ok(sub_meta) => ok_json(&serde_json::json!({ "subreddit": sub_meta })),
 		Err(msg) => api_error(&msg),
 	}
 }

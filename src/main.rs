@@ -164,6 +164,7 @@ async fn main() {
 	app.at("/api/v1/user/:name").get(|r| api::user_profile(r).boxed());
 	app.at("/api/v1/user/:name/:listing").get(|r| api::user_profile(r).boxed());
 	app.at("/api/v1/r/:sub").get(|r| api::subreddit_listing(r).boxed());
+	app.at("/api/v1/r/:sub/about").get(|r| api::subreddit_meta(r).boxed());
 	app.at("/api/v1/r/:sub/search").get(|r| api::search_endpoint(r).boxed());
 	app.at("/api/v1/r/:sub/comments/:id").get(|r| api::post_item(r).boxed());
 	app.at("/api/v1/r/:sub/:sort").get(|r| api::subreddit_listing(r).boxed());
