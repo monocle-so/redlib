@@ -296,15 +296,17 @@ static REGEX_INLINE_IMAGE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*h
 
 fn inline_image_id<'a>(line: &'a str, metadata: &Value) -> Option<&'a str> {
 	let id = REGEX_INLINE_IMAGE.captures(line)?.get(1)?.as_str();
-	metadata[id].is_object().then_some(id)
+	metadata[id]["s"].is_object().then_some(id)
 }
 
 /// Selftext without the inline image lines, which `Media::parse` returns as the gallery.
 fn selftext_without_images(data: &Value) -> String {
 	let metadata = &data["media_metadata"];
-	data["selftext"]
-		.as_str()
-		.unwrap_or_default()
+	let selftext = data["selftext"].as_str().unwrap_or_default();
+	if !selftext.lines().any(|line| inline_image_id(line, metadata).is_some()) {
+		return selftext.to_string();
+	}
+	selftext
 		.lines()
 		.filter(|line| inline_image_id(line, metadata).is_none())
 		.collect::<Vec<_>>()
