@@ -227,7 +227,17 @@ impl Media {
 				}
 			}
 		} else if data["is_self"].as_bool().unwrap_or_default() {
-			// If type is self, return permalink
+			// If type is self, return permalink, with any pasted images as the gallery
+			let metadata = &data["media_metadata"];
+			let items = data["selftext"]
+				.as_str()
+				.unwrap_or_default()
+				.lines()
+				.filter_map(|line| inline_image_id(line, metadata))
+				.map(|id| serde_json::json!({ "media_id": id }))
+				.collect();
+			gallery = GalleryMedia::parse(&Value::Array(items), metadata);
+
 			("self", &data["permalink"], None)
 		} else if data["is_gallery"].as_bool().unwrap_or_default() {
 			// If this post contains a gallery of images
@@ -278,6 +288,29 @@ impl Media {
 			gallery,
 		)
 	}
+}
+
+// Images pasted into a text post (rather than attached as a gallery) are listed
+// in media_metadata and appear in selftext as bare preview.redd.it URLs on their own line.
+static REGEX_INLINE_IMAGE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*https://preview\.redd\.it/([a-z0-9]+)\.\S+\s*$").unwrap());
+
+fn inline_image_id<'a>(line: &'a str, metadata: &Value) -> Option<&'a str> {
+	let id = REGEX_INLINE_IMAGE.captures(line)?.get(1)?.as_str();
+	metadata[id].is_object().then_some(id)
+}
+
+/// Selftext without the inline image lines, which `Media::parse` returns as the gallery.
+fn selftext_without_images(data: &Value) -> String {
+	let metadata = &data["media_metadata"];
+	data["selftext"]
+		.as_str()
+		.unwrap_or_default()
+		.lines()
+		.filter(|line| inline_image_id(line, metadata).is_none())
+		.collect::<Vec<_>>()
+		.join("\n")
+		.trim()
+		.to_string()
 }
 
 #[derive(Serialize)]
@@ -390,7 +423,7 @@ impl Post {
 			if body.is_empty() {
 				body = rewrite_urls(&val(post, "body_html"));
 			}
-			let body_markdown = val(post, "selftext");
+			let body_markdown = selftext_without_images(data);
 
 			posts.push(Self {
 				id: val(post, "id"),
@@ -810,16 +843,16 @@ pub async fn parse_post(post: &Value) -> Post {
 	let poll = Poll::parse(&post["data"]["poll_data"]);
 
 	// Raw markdown as authored on Reddit (empty for link posts / removed posts).
-	let body_markdown = val(post, "selftext");
+	let selftext = val(post, "selftext");
 
 	let body = if val(post, "removed_by_category") == "moderator" {
 		format!(
 			"<div class=\"md\"><p>[removed] — <a href=\"https://{}{permalink}\">view removed post</a></p></div>",
 			get_setting("REDLIB_PUSHSHIFT_FRONTEND").unwrap_or_else(|| String::from(crate::config::DEFAULT_PUSHSHIFT_FRONTEND)),
 		)
-	} else if body_markdown.contains("```") {
+	} else if selftext.contains("```") {
 		let mut html_output = String::new();
-		let parser = pulldown_cmark::Parser::new(&body_markdown);
+		let parser = pulldown_cmark::Parser::new(&selftext);
 		pulldown_cmark::html::push_html(&mut html_output, parser);
 		rewrite_urls(&html_output)
 	} else {
@@ -833,7 +866,7 @@ pub async fn parse_post(post: &Value) -> Post {
 		community: val(post, "subreddit"),
 		body: body.clone(),
 		body_html: body,
-		body_markdown,
+		body_markdown: selftext_without_images(&post["data"]),
 		author: Author {
 			name: val(post, "author"),
 			flair: Flair {
