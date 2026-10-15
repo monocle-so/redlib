@@ -11,7 +11,7 @@
 use crate::client::{OAUTH_CLIENT, OAUTH_IS_ROLLING_OVER, OAUTH_RATELIMIT_REMAINING};
 use hyper::{Body, Request, Response};
 use serde_json::json;
-use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
 use std::sync::{LazyLock, RwLock};
 use time::{macros::format_description, OffsetDateTime};
 
@@ -39,6 +39,7 @@ static RATELIMIT_SEEN_AT: AtomicU64 = AtomicU64::new(0);
 static UPSTREAM_LAST_STATUS: AtomicU16 = AtomicU16::new(0);
 static UPSTREAM_OK_AT: AtomicU64 = AtomicU64::new(0);
 static UPSTREAM_ERR_AT: AtomicU64 = AtomicU64::new(0);
+static UPSTREAM_LAST_FAILED: AtomicBool = AtomicBool::new(false);
 static UPSTREAM_REQUESTS: AtomicU64 = AtomicU64::new(0);
 static UPSTREAM_ERRORS: AtomicU64 = AtomicU64::new(0);
 
@@ -105,6 +106,7 @@ pub fn note_ratelimit(reset_in: Option<f32>, used: Option<f32>) {
 pub fn note_upstream(status: u16, error: Option<String>) {
 	UPSTREAM_REQUESTS.fetch_add(1, Ordering::SeqCst);
 	UPSTREAM_LAST_STATUS.store(status, Ordering::SeqCst);
+	UPSTREAM_LAST_FAILED.store(error.is_some(), Ordering::SeqCst);
 
 	match error {
 		Some(message) => {
@@ -155,7 +157,7 @@ fn snapshot() -> serde_json::Value {
 
 	let ok_at = UPSTREAM_OK_AT.load(Ordering::SeqCst);
 	let err_at = UPSTREAM_ERR_AT.load(Ordering::SeqCst);
-	let last_call_failed = err_at > 0 && err_at >= ok_at;
+	let last_call_failed = UPSTREAM_LAST_FAILED.load(Ordering::SeqCst);
 
 	let degraded = rollover_stuck || token_expired || last_call_failed || remaining <= RATELIMIT_DEGRADED_BELOW;
 

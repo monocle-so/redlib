@@ -421,7 +421,7 @@ async fn json_cached(path: String, quarantine: bool) -> Result<Value, String> {
 						};
 					}
 
-					if status.is_server_error() {
+					if !status.is_success() {
 						crate::health::note_upstream(status.as_u16(), Some(format!("Reddit returned {status}")));
 					} else {
 						crate::health::note_upstream(status.as_u16(), None);
