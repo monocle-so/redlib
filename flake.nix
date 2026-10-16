@@ -21,6 +21,7 @@
           inherit system;
           overlays = [ (import rust-overlay) ];
         };
+        muslCC = pkgs.pkgsCross.musl64.stdenv.cc;
 
         inherit (pkgs) lib;
 
@@ -44,9 +45,33 @@
           strictDeps = true;
           doCheck = false;
 
+          nativeBuildInputs = with pkgs; [
+            git
+            cmake
+            perl
+            llvmPackages.libclang
+          ];
+          CC_x86_64_unknown_linux_musl =
+          "${muslCC}/bin/x86_64-unknown-linux-musl-gcc";
+          CXX_x86_64_unknown_linux_musl =
+            "${muslCC}/bin/x86_64-unknown-linux-musl-g++";
+
+          preBuild = ''
+            export BINDGEN_EXTRA_CLANG_ARGS="--target=x86_64-unknown-linux-musl \
+              $(< ${muslCC}/nix-support/libc-crt1-cflags) \
+              $(< ${muslCC}/nix-support/libc-cflags) \
+              $(< ${muslCC}/nix-support/cc-cflags) \
+              $(< ${muslCC}/nix-support/libcxx-cxxflags)"
+          '';
+
+
+
+          LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+
           CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
           CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
         };
+
       in
       {
         checks = {
